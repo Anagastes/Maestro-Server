@@ -2538,7 +2538,7 @@ def set_volume():
                 time.sleep(0.1)
                 status = get_mpd_status_for_display()
                 if status:
-                    socketio.emit('mpd_status', status, broadcast=True)
+                    socketio.emit('mpd_status', status, to=None, skip_sid=None)
             socketio.start_background_task(broadcast_volume_update)
             return 'OK', 200
         else:
