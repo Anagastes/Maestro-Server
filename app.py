@@ -6709,7 +6709,7 @@ def api_export_status():
 
 @app.route('/api/export/download/<filename>')
 def api_export_download(filename):
-    """Download the exported ZIP file"""
+    """Download the exported ZIP file from any temp location"""
     import tempfile
     
     if not PLAYLIST_EXPORT_AVAILABLE:
@@ -6720,19 +6720,27 @@ def api_export_download(filename):
         if not filename.startswith('maestro_') or not filename.endswith('.zip'):
             return jsonify({'status': 'error', 'message': 'Invalid filename'}), 400
         
-        # Get the file from temp directory
-        temp_dir = tempfile.gettempdir()
-        file_path = os.path.join(temp_dir, filename)
+        # Search all temp locations
+        temp_locations = [
+            tempfile.gettempdir(),           # Usually /tmp
+            '/var/tmp',                      # Alternative temp
+            os.path.expanduser('~/.cache/maestro/temp'),  # User cache
+            os.path.expanduser('~/maestro_temp'),          # Home directory
+        ]
         
-        if not os.path.exists(file_path):
-            return jsonify({'status': 'error', 'message': 'Export file not found'}), 404
+        for temp_dir in temp_locations:
+            file_path = os.path.join(temp_dir, filename)
+            if os.path.exists(file_path):
+                return send_from_directory(
+                    temp_dir,
+                    filename,
+                    as_attachment=True,
+                    download_name=filename
+                )
         
-        return send_from_directory(
-            temp_dir,
-            filename,
-            as_attachment=True,
-            download_name=filename
-        )
+        # File not found in any location
+        return jsonify({'status': 'error', 'message': 'Export file not found in any temp location'}), 404
+        
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -6751,41 +6759,57 @@ def api_check_ffmpeg():
 
 @app.route('/api/export/list')
 def api_export_list():
-    """List all available export ZIP files"""
+    """List all available export ZIP files from all temp locations"""
     import tempfile
     from datetime import datetime
     
     try:
-        temp_dir = tempfile.gettempdir()
         exports = []
         
-        for filename in os.listdir(temp_dir):
-            # Match both auto-generated (maestro_export_) and custom (maestro_) filenames
-            if filename.startswith('maestro_') and filename.endswith('.zip'):
-                filepath = os.path.join(temp_dir, filename)
-                try:
-                    stat = os.stat(filepath)
-                    # Try to parse timestamp from auto-generated filename
-                    if filename.startswith('maestro_export_'):
-                        timestamp_str = filename.replace('maestro_export_', '').replace('.zip', '')
+        # Check all possible temp directories (same as get_temp_dir_for_export)
+        temp_locations = [
+            tempfile.gettempdir(),           # Usually /tmp
+            '/var/tmp',                      # Alternative temp
+            os.path.expanduser('~/.cache/maestro/temp'),  # User cache
+            os.path.expanduser('~/maestro_temp'),          # Home directory
+        ]
+        
+        for temp_dir in temp_locations:
+            if not os.path.exists(temp_dir):
+                continue
+            
+            try:
+                for filename in os.listdir(temp_dir):
+                    # Match both auto-generated (maestro_export_) and custom (maestro_) filenames
+                    if filename.startswith('maestro_') and filename.endswith('.zip'):
+                        filepath = os.path.join(temp_dir, filename)
                         try:
-                            created = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
-                            created_str = created.strftime('%Y-%m-%d %H:%M:%S')
-                        except:
-                            created_str = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-                    else:
-                        # Custom filename - use file modification time
-                        created_str = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-                    
-                    exports.append({
-                        'filename': filename,
-                        'size_mb': round(stat.st_size / (1024 * 1024), 2),
-                        'created': created_str,
-                        'timestamp': stat.st_mtime
-                    })
-                except Exception as e:
-                    print(f"Error reading export file {filename}: {e}")
-                    continue
+                            stat = os.stat(filepath)
+                            # Try to parse timestamp from auto-generated filename
+                            if filename.startswith('maestro_export_'):
+                                timestamp_str = filename.replace('maestro_export_', '').replace('.zip', '')
+                                try:
+                                    created = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
+                                    created_str = created.strftime('%Y-%m-%d %H:%M:%S')
+                                except:
+                                    created_str = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                            else:
+                                # Custom filename - use file modification time
+                                created_str = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                            
+                            exports.append({
+                                'filename': filename,
+                                'size_mb': round(stat.st_size / (1024 * 1024), 2),
+                                'created': created_str,
+                                'timestamp': stat.st_mtime,
+                                'path': filepath  # Include full path for debugging
+                            })
+                        except Exception as e:
+                            logger.warning(f"Error reading export file {filename}: {e}")
+                            continue
+            except Exception as e:
+                logger.warning(f"Error listing exports in {temp_dir}: {e}")
+                continue
         
         # Sort by timestamp, newest first
         exports.sort(key=lambda x: x['timestamp'], reverse=True)
@@ -6796,11 +6820,12 @@ def api_export_list():
             'count': len(exports)
         })
     except Exception as e:
+        logger.error(f"Export list error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/export/delete/<filename>', methods=['DELETE'])
 def api_export_delete(filename):
-    """Delete an export ZIP file"""
+    """Delete an export ZIP file from any temp location"""
     import tempfile
     
     try:
@@ -6808,18 +6833,37 @@ def api_export_delete(filename):
         if not filename.startswith('maestro_') or not filename.endswith('.zip'):
             return jsonify({'status': 'error', 'message': 'Invalid filename'}), 400
         
-        temp_dir = tempfile.gettempdir()
-        file_path = os.path.join(temp_dir, filename)
+        # Check all temp locations (MUST MATCH list endpoint!)
+        temp_locations = [
+            tempfile.gettempdir(),                          # Usually /tmp
+            '/var/tmp',                                     # Alternative temp
+            os.path.expanduser('~/.cache/maestro/temp'),   # User cache
+            os.path.expanduser('~/maestro_temp'),          # Home directory
+        ]
         
-        if not os.path.exists(file_path):
-            return jsonify({'status': 'error', 'message': 'File not found'}), 404
+        # Find and delete the file from whichever location it's in
+        for temp_dir in temp_locations:
+            file_path = os.path.join(temp_dir, filename)
+            if os.path.exists(file_path) and os.path.isfile(file_path):
+                try:
+                    os.remove(file_path)
+                    print(f"Deleted export: {file_path}")
+                    return jsonify({
+                        'status': 'success',
+                        'message': f'Deleted {filename}'
+                    })
+                except Exception as e:
+                    print(f"Error deleting {file_path}: {e}")
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'Failed to delete file: {str(e)}'
+                    }), 500
         
-        os.remove(file_path)
-        return jsonify({
-            'status': 'success',
-            'message': f'Deleted {filename}'
-        })
+        # File not found in any location
+        return jsonify({'status': 'error', 'message': 'File not found in any temp location'}), 404
+        
     except Exception as e:
+        print(f"Export delete error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # --- Application Startup ---

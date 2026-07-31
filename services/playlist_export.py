@@ -88,11 +88,11 @@ def get_temp_dir_for_export(estimated_size_bytes: int):
         estimated_size_bytes: Estimated size needed (for both temp files and final ZIP)
     
     Returns:
-        Path to temp directory with sufficient space
+        Path to temp directory with sufficient space, or raises error if none found
     """
     import shutil
     
-    # Estimate: we need 2x the size (temp files + ZIP file)
+    # For MP3 export, we need 2.5x the estimated size (FLAC originals + MP3 + ZIP)
     space_needed = estimated_size_bytes * 2.5
     
     # Try multiple temp locations in order of preference
@@ -103,6 +103,10 @@ def get_temp_dir_for_export(estimated_size_bytes: int):
         os.path.expanduser('~/maestro_temp'),          # Home directory
     ]
     
+    best_location = None
+    best_available = 0
+    error_details = []
+    
     for temp_location in temp_locations:
         try:
             # Create directory if it doesn't exist
@@ -112,17 +116,28 @@ def get_temp_dir_for_export(estimated_size_bytes: int):
             stat_result = shutil.disk_usage(temp_location)
             available_bytes = stat_result.free
             
+            error_details.append(f"{temp_location}: {available_bytes / (1024**3):.1f}GB available (need {space_needed / (1024**3):.1f}GB)")
+            
             if available_bytes > space_needed:
-                logger.info(f"Using temp directory: {temp_location} ({available_bytes / (1024**3):.1f}GB available)")
+                logger.info(f"✓ Using temp directory: {temp_location} ({available_bytes / (1024**3):.1f}GB available)")
                 return temp_location
-            else:
-                logger.warning(f"Temp directory {temp_location} has only {available_bytes / (1024**3):.1f}GB, need {space_needed / (1024**3):.1f}GB")
+            
+            # Track best location even if insufficient
+            if available_bytes > best_available:
+                best_available = available_bytes
+                best_location = temp_location
+                
         except Exception as e:
+            error_details.append(f"{temp_location}: Error checking space ({str(e)})")
             logger.warning(f"Cannot use temp location {temp_location}: {e}")
     
-    # Fallback to default temp, even if not enough space (will fail gracefully)
-    logger.error(f"No temp directory found with {space_needed / (1024**3):.1f}GB space, using default")
-    return tempfile.gettempdir()
+    # No location with enough space found
+    if best_location:
+        error_msg = f"Insufficient disk space for export. Need {space_needed / (1024**3):.1f}GB, but best available is {best_available / (1024**3):.1f}GB\n\nChecked locations:\n" + "\n".join(error_details)
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    else:
+        raise ValueError(f"No temp directory found. Checked: {', '.join(temp_locations)}")
 
 def get_folder_structure_path(song: Dict, structure: str) -> str:
     """
@@ -275,11 +290,21 @@ def export_queue(
         # First, clean up old exports to free space
         cleanup_old_exports(max_age_hours=24)
         
-        # Estimate queue size: assume average 5MB per song for FLAC, 1MB for MP3
+        # Estimate queue size based on format
+        # IMPORTANT: For MP3 export, we need space for BOTH original FLACs AND MP3s!
+        # FLAC average is 30-40MB per song, MP3 is 0.5-1MB per song
         if format_type == 'flac':
-            avg_file_size = 5 * 1024 * 1024  # 5MB average
+            # For FLAC, we just copy files (no transcoding)
+            avg_file_size = 35 * 1024 * 1024  # 35MB average FLAC file
+            space_multiplier = 1.5  # Small overhead
         else:
-            avg_file_size = 1 * 1024 * 1024  # 1MB average
+            # For MP3, we need space for BOTH FLAC originals AND MP3 output
+            avg_flac_size = 35 * 1024 * 1024  # 35MB average FLAC
+            avg_mp3_size = 1 * 1024 * 1024     # 1MB average MP3
+            # Worst case: all FLACs in temp + all MP3s + ZIP = roughly 2x FLAC size
+            avg_file_size = avg_flac_size + avg_mp3_size
+            space_multiplier = 2.5  # Need extra for FLAC originals + MP3 output + ZIP
+        
         estimated_total_size = len(queue) * avg_file_size
         
         # Get temp directory with enough space
@@ -562,11 +587,12 @@ def cleanup_old_exports(max_age_hours: int = 24):
     try:
         import time
         
-        # Check multiple temp locations
+        # Check multiple temp locations (MUST MATCH export function paths!)
         temp_locations = [
             tempfile.gettempdir(),
             '/var/tmp',
-            os.path.expanduser('~/.maestro/temp'),
+            os.path.expanduser('~/.cache/maestro/temp'),
+            os.path.expanduser('~/maestro_temp'),
         ]
         
         current_time = time.time()
