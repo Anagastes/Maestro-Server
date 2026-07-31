@@ -18,6 +18,7 @@ import tempfile
 import shutil
 import subprocess
 import random
+import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Callable
 import logging
@@ -78,6 +79,50 @@ def check_ffmpeg():
         return result.returncode == 0
     except:
         return False
+
+def get_temp_dir_for_export(estimated_size_bytes: int):
+    """
+    Find best temp directory with enough space for export
+    
+    Args:
+        estimated_size_bytes: Estimated size needed (for both temp files and final ZIP)
+    
+    Returns:
+        Path to temp directory with sufficient space
+    """
+    import shutil
+    
+    # Estimate: we need 2x the size (temp files + ZIP file)
+    space_needed = estimated_size_bytes * 2.5
+    
+    # Try multiple temp locations in order of preference
+    temp_locations = [
+        tempfile.gettempdir(),           # Usually /tmp
+        '/var/tmp',                       # Alternative temp
+        os.path.expanduser('~/.cache/maestro/temp'),  # User cache
+        os.path.expanduser('~/maestro_temp'),          # Home directory
+    ]
+    
+    for temp_location in temp_locations:
+        try:
+            # Create directory if it doesn't exist
+            os.makedirs(temp_location, exist_ok=True)
+            
+            # Check available space
+            stat_result = shutil.disk_usage(temp_location)
+            available_bytes = stat_result.free
+            
+            if available_bytes > space_needed:
+                logger.info(f"Using temp directory: {temp_location} ({available_bytes / (1024**3):.1f}GB available)")
+                return temp_location
+            else:
+                logger.warning(f"Temp directory {temp_location} has only {available_bytes / (1024**3):.1f}GB, need {space_needed / (1024**3):.1f}GB")
+        except Exception as e:
+            logger.warning(f"Cannot use temp location {temp_location}: {e}")
+    
+    # Fallback to default temp, even if not enough space (will fail gracefully)
+    logger.error(f"No temp directory found with {space_needed / (1024**3):.1f}GB space, using default")
+    return tempfile.gettempdir()
 
 def get_folder_structure_path(song: Dict, structure: str) -> str:
     """
@@ -227,7 +272,20 @@ def export_queue(
     _export_state['status'] = 'Preparing export...'
     
     try:
-        # Create temp export directory
+        # First, clean up old exports to free space
+        cleanup_old_exports(max_age_hours=24)
+        
+        # Estimate queue size: assume average 5MB per song for FLAC, 1MB for MP3
+        if format_type == 'flac':
+            avg_file_size = 5 * 1024 * 1024  # 5MB average
+        else:
+            avg_file_size = 1 * 1024 * 1024  # 1MB average
+        estimated_total_size = len(queue) * avg_file_size
+        
+        # Get temp directory with enough space
+        export_temp_base = get_temp_dir_for_export(estimated_total_size)
+        
+        # Create temp export directory in the selected location
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         # Use custom filename if provided, otherwise auto-generate
         # Always prefix with 'maestro_' for identification and cleanup
@@ -235,11 +293,13 @@ def export_queue(
             export_name = f"maestro_{custom_filename}"
         else:
             export_name = f"maestro_export_{timestamp}"
-        temp_export_dir = tempfile.mkdtemp(prefix=export_name)
+        
+        temp_export_dir = tempfile.mkdtemp(prefix=f"{export_name}_", dir=export_temp_base)
         temp_music_dir = os.path.join(temp_export_dir, 'music')
         os.makedirs(temp_music_dir, exist_ok=True)
         
         logger.info(f"Starting queue export to {temp_export_dir}")
+        logger.info(f"Estimated size: {estimated_total_size / (1024**3):.1f}GB")
         
         processed = 0
         skipped = 0
@@ -312,6 +372,12 @@ def export_queue(
                 # Copy or transcode file
                 if format_type == 'flac':
                     shutil.copy2(source_file, dest_file)
+                    # Ensure file is synced to disk before proceeding
+                    try:
+                        with open(dest_file, 'rb'):
+                            pass
+                    except:
+                        pass
                     logger.info(f"Copied: {dest_file}")
                 else:
                     if not transcode_to_mp3(source_file, dest_file, mp3_bitrate):
@@ -338,16 +404,78 @@ def export_queue(
         if callback:
             callback(_export_state)
         
-        # Create ZIP file
-        zip_output_dir = tempfile.gettempdir()
+        # Create ZIP file in the same temp directory with enough space
         zip_filename = f"{export_name}.zip"
-        zip_path = os.path.join(zip_output_dir, zip_filename)
+        zip_path = os.path.join(export_temp_base, zip_filename)
         
-        shutil.make_archive(
-            os.path.splitext(zip_path)[0],  # Path without .zip
-            'zip',  # Format
-            temp_music_dir  # Directory to compress
-        )
+        logger.info(f"Creating ZIP archive at {zip_path}")
+        
+        try:
+            # Use compression_type=zipfile.ZIP_STORED for faster writing on large files
+            # We'll use ZIP_DEFLATED for compression but with large buffer
+            zipf = zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED, allowZip64=True)
+            
+            # Collect all files first to show accurate progress
+            all_files = []
+            for root, dirs, files in os.walk(temp_music_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, temp_music_dir)
+                    all_files.append((file_path, arcname))
+            
+            total_files = len(all_files)
+            files_added = 0
+            
+            # Write files to ZIP with progress tracking
+            for file_path, arcname in all_files:
+                try:
+                    # Use write with default block size, but flush periodically
+                    zipf.write(file_path, arcname, compress_type=zipfile.ZIP_DEFLATED)
+                    files_added += 1
+                    
+                    # Update progress every 10 files
+                    if files_added % 10 == 0:
+                        _export_state['status'] = f'Compressing to ZIP... {files_added}/{total_files} files'
+                        if callback:
+                            callback(_export_state)
+                        # Force flush to disk
+                        zipf.fp.flush()
+                    
+                    logger.info(f"Added to ZIP: {arcname}")
+                except Exception as e:
+                    logger.error(f"Error adding file to ZIP {arcname}: {e}")
+                    errors.append(f"Failed to add to ZIP: {arcname}")
+                    # Continue with next file instead of failing completely
+                    continue
+            
+            # CRITICAL: Explicitly close and flush the ZIP file
+            zipf.close()
+            
+            # Verify ZIP file is valid and complete
+            try:
+                with zipfile.ZipFile(zip_path, 'r') as verify_zip:
+                    bad_file = verify_zip.testzip()
+                    if bad_file:
+                        raise ValueError(f"ZIP file verification failed for: {bad_file}")
+                logger.info(f"ZIP file created and verified successfully: {zip_path}")
+            except Exception as verify_error:
+                logger.error(f"ZIP verification failed: {verify_error}")
+                # Try to clean up the bad file
+                try:
+                    os.remove(zip_path)
+                except:
+                    pass
+                raise ValueError(f"ZIP file verification failed: {str(verify_error)}")
+                
+        except Exception as e:
+            logger.error(f"ZIP creation error: {e}")
+            # Clean up incomplete ZIP file
+            try:
+                if os.path.exists(zip_path):
+                    os.remove(zip_path)
+            except:
+                pass
+            raise ValueError(f"Failed to create ZIP archive: {str(e)}")
         
         # Calculate file size
         file_size_mb = os.path.getsize(zip_path) / (1024 * 1024)
@@ -426,28 +554,52 @@ def start_async_queue_export(
 
 def cleanup_old_exports(max_age_hours: int = 24):
     """
-    Clean up old export ZIP files from temp directory
+    Clean up old export ZIP files and temp directories from all temp locations
     
     Args:
         max_age_hours: Delete exports older than this
     """
     try:
         import time
-        temp_dir = tempfile.gettempdir()
+        
+        # Check multiple temp locations
+        temp_locations = [
+            tempfile.gettempdir(),
+            '/var/tmp',
+            os.path.expanduser('~/.maestro/temp'),
+        ]
+        
         current_time = time.time()
         max_age_seconds = max_age_hours * 3600
         
-        for filename in os.listdir(temp_dir):
-            # Clean up all Maestro exports (both auto-generated and custom named)
-            if filename.startswith('maestro_') and filename.endswith('.zip'):
-                filepath = os.path.join(temp_dir, filename)
-                file_age = current_time - os.path.getmtime(filepath)
+        for temp_dir in temp_locations:
+            if not os.path.exists(temp_dir):
+                continue
                 
-                if file_age > max_age_seconds:
-                    try:
-                        os.remove(filepath)
-                        logger.info(f"Cleaned up old export: {filename}")
-                    except Exception as e:
-                        logger.error(f"Failed to delete {filename}: {e}")
+            try:
+                for filename in os.listdir(temp_dir):
+                    # Clean up ZIP files
+                    if filename.startswith('maestro_') and filename.endswith('.zip'):
+                        filepath = os.path.join(temp_dir, filename)
+                        try:
+                            file_age = current_time - os.path.getmtime(filepath)
+                            if file_age > max_age_seconds:
+                                os.remove(filepath)
+                                logger.info(f"Cleaned up old export: {filepath}")
+                        except Exception as e:
+                            logger.error(f"Failed to delete {filepath}: {e}")
+                    
+                    # Clean up incomplete temp directories
+                    elif filename.startswith('maestro_') and os.path.isdir(os.path.join(temp_dir, filename)):
+                        dirpath = os.path.join(temp_dir, filename)
+                        try:
+                            dir_age = current_time - os.path.getmtime(dirpath)
+                            if dir_age > max_age_seconds:
+                                shutil.rmtree(dirpath, ignore_errors=True)
+                                logger.info(f"Cleaned up old temp directory: {dirpath}")
+                        except Exception as e:
+                            logger.error(f"Failed to delete {dirpath}: {e}")
+            except Exception as e:
+                logger.warning(f"Error cleaning temp location {temp_dir}: {e}")
     except Exception as e:
         logger.error(f"Cleanup error: {e}")
