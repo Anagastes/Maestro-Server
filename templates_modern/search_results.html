@@ -1568,7 +1568,10 @@
         // Clear playlist function
         function clearPlaylist() {
             if (confirm('Are you sure you want to clear the entire playlist?')) {
-                fetch('/clear_playlist?ajax=1', { method: 'POST' })
+                fetch('/clear_playlist?ajax=1', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
                     .then(response => response.json())
                     .then(data => {
                         if (data.status === 'success') {
