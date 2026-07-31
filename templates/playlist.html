@@ -1975,24 +1975,26 @@
 
             // Clear playlist function
             function clearPlaylist() {
-                if (confirm('Are you sure you want to clear the entire playlist?')) {
-                    fetch('/clear_playlist', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }
-                    })
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.status === 'error') {
-                                displayMessage('error', data.message);
-                            } else {
-                                displayMessage('info', 'Playlist cleared successfully');
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Error clearing playlist:', error);
-                            displayMessage('error', `Error clearing playlist: ${error.message}`);
-                        });
+                if (!confirm('Are you sure you want to clear the entire playlist?')) {
+                    return;
                 }
+                
+                fetch('/clear_playlist', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'error') {
+                            alert('Error: ' + data.message);
+                        } else {
+                            displayMessage('info', 'Playlist cleared successfully');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error clearing playlist:', error);
+                        alert('Error clearing playlist: ' + error.message);
+                    });
             }
 
             // Make clearPlaylist globally available
@@ -2604,14 +2606,13 @@
                 if (data.status === 'success') {
                     displayMessage('info', data.message);
                     closeLoadModal();
-                    // Playlist will be updated via Socket.IO
                 } else {
-                    alert(data.message || 'Failed to load playlist');
+                    displayMessage('error', data.message || 'Failed to load playlist');
                 }
             })
             .catch(error => {
                 console.error('Error loading playlist:', error);
-                alert('Error loading playlist: ' + error.message);
+                displayMessage('error', 'Error loading playlist: ' + error.message);
             });
         }
 
@@ -2632,12 +2633,12 @@
                     displayMessage('info', data.message);
                     loadPlaylistsList(); // Refresh the list
                 } else {
-                    alert(data.message || 'Failed to delete playlist');
+                    displayMessage('error', data.message || 'Failed to delete playlist');
                 }
             })
             .catch(error => {
                 console.error('Error deleting playlist:', error);
-                alert('Error deleting playlist: ' + error.message);
+                displayMessage('error', 'Error deleting playlist: ' + error.message);
             });
         }
 
