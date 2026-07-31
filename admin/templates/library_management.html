@@ -508,14 +508,18 @@
                         <!-- Progress Bar (Hidden until export starts) -->
                         <div id="export-progress-section" style="display: none; margin-bottom: 10px;">
                             <p style="color: #95a5a6; margin-bottom: 5px; font-size: 0.9em;">
-                                <strong id="export-current-song">Preparing export...</strong>
+                                <strong id="export-status-message">Preparing export...</strong>
                             </p>
-                            <div style="background: rgba(0,0,0,0.3); border-radius: 5px; height: 20px; overflow: hidden; margin-bottom: 5px;">
-                                <div id="export-progress-bar" style="height: 100%; background: linear-gradient(90deg, #16a085, #1abc9c); width: 0%; transition: width 0.3s ease;"></div>
+                            <p style="color: #7f8c8d; margin-bottom: 8px; font-size: 0.85em;">
+                                📁 <span id="export-current-song">Preparing...</span>
+                            </p>
+                            <div style="background: rgba(0,0,0,0.3); border-radius: 5px; height: 24px; overflow: hidden; margin-bottom: 8px; display: flex; align-items: center;">
+                                <div id="export-progress-bar" style="height: 100%; background: linear-gradient(90deg, #16a085, #1abc9c); width: 0%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 0.75em; font-weight: bold;"></div>
                             </div>
-                            <p style="color: #95a5a6; font-size: 0.8em; text-align: center;">
-                                <span id="export-count">0</span> / <span id="export-total">0</span> songs
-                            </p>
+                            <div style="display: flex; justify-content: space-between; align-items: center; color: #95a5a6; font-size: 0.8em;">
+                                <span><span id="export-count">0</span> / <span id="export-total">0</span> songs</span>
+                                <span id="export-percent" style="color: #1abc9c; font-weight: bold;">0%</span>
+                            </div>
                         </div>
 
                         <!-- Buttons -->
@@ -1254,12 +1258,17 @@
                             if (status.running) {
                                 const percent = status.total > 0 ? Math.round((status.progress / status.total) * 100) : 0;
                                 document.getElementById('export-progress-bar').style.width = percent + '%';
+                                document.getElementById('export-progress-bar').textContent = percent > 10 ? percent + '%' : '';
+                                document.getElementById('export-percent').textContent = percent + '%';
                                 document.getElementById('export-current-song').textContent = status.current_song || 'Preparing...';
-                                document.getElementById('export-count').textContent = status.progress;
+                                document.getElementById('export-count').textContent = status.songs_processed || status.progress;
                                 document.getElementById('export-total').textContent = status.total;
+                                document.getElementById('export-status-message').textContent = status.status || 'Exporting...';
                             } else if (status.progress > 0) {
                                 // Export complete
                                 document.getElementById('export-progress-bar').style.width = '100%';
+                                document.getElementById('export-progress-bar').textContent = '100%';
+                                document.getElementById('export-percent').textContent = '100%';
                                 currentExportFilename = status.export_file.split('/').pop();
                                 
                                 document.getElementById('export-result-section').style.display = 'block';
