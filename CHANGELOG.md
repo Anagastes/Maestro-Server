@@ -1,5 +1,45 @@
 # Maestro Server - Changelog
 
+## Version 4.0.4 - Export Stability & Disk Space Management (July 31, 2026)
+
+### 🔧 Export System Fixes
+- **Fixed Temp Directory Selection**: Reordered temp directory preferences to prioritize main filesystem over tmpfs
+  - Previous: `/tmp` (tmpfs with quota) → `/var/tmp` → `~/.cache/maestro/temp` → `~/maestro_temp`
+  - New: `~/.cache/maestro/temp` → `~/maestro_temp` → `/var/tmp` → `/tmp` (last resort)
+  - Prevents "Disk quota exceeded" errors on large ZIP exports (2.7GB+)
+- **Export Progress Enhancement**: ZIP compression now shows real-time progress with file count
+  - Status: "Compressing to ZIP... X/Y files"
+  - Replaces silent progress with visible feedback
+
+### 💾 Disk Space Management
+- **Automatic Log Rotation**: Implemented logrotate for MPD logs
+  - Rotates daily, keeps 7 days of logs
+  - Compresses old logs (gzip), saving ~99.9% disk space
+  - MPD logs: 126GB → ~126MB
+  - Prevents catastrophic disk space exhaustion
+- **System-Wide Deployment**:
+  - Fresh installs: Logrotate deploys automatically via `install-maestro.sh`
+  - Existing installs: Deploy via `./update-maestro.sh`
+  - No manual configuration needed
+- **Documentation**: Added `LOG_ROTATION_SETUP.md` with complete setup details
+
+### 📄 Files Modified
+- `services/playlist_export.py` - Temp directory preference reordering
+- `install-maestro.sh` - Added logrotate deployment for fresh installs
+- `update-maestro.sh` - Added logrotate deployment for existing installations
+- `config/logrotate-mpd.conf` - New logrotate configuration file
+- `VERSION` - Updated to 4.0.4
+- `CHANGELOG.md` - This entry
+
+### 🎯 Testing & Validation
+- ✅ Export successful with 40 songs (2.7GB ZIP)
+- ✅ Temp directory selection prioritizes main filesystem
+- ✅ Export status displays percentage and file count during compression
+- ✅ Logrotate configuration tested and deployed
+- ✅ Disk space freed from 75% usage back to 16% usage
+
+---
+
 ## Version 4.0.3 - Status Box UI Refinement (July 22, 2026)
 
 ### 🎨 Main Page Status Box Improvements
