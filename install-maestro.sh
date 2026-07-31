@@ -877,6 +877,16 @@ EOF
         echo -e "${BLUE}  Config file: /etc/maestro/nfs-config.conf${NC}"
     fi
     
+    # Setup log rotation for MPD (prevents 126GB+ log buildup)
+    echo -e "${BLUE}Setting up log rotation for MPD...${NC}"
+    if [ -f "$REPO_DIR/config/logrotate-mpd.conf" ]; then
+        sudo cp "$REPO_DIR/config/logrotate-mpd.conf" /etc/logrotate.d/mpd
+        sudo chmod 644 /etc/logrotate.d/mpd
+        echo -e "${GREEN}✓ Log rotation configured (daily rotation, keeps 7 days)${NC}"
+    else
+        echo -e "${YELLOW}⚠ logrotate config not found at $REPO_DIR/config/logrotate-mpd.conf${NC}"
+    fi
+    
     # Enable services
     sudo systemctl enable maestro-web.service
     sudo systemctl enable maestro-admin.service

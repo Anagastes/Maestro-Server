@@ -233,6 +233,16 @@ RestartSec=10
 MPDEOF
 echo -e "${GREEN}✓ Configured MPD to wait for remote filesystems${NC}"
 
+# Setup log rotation for MPD (prevents 126GB+ log buildup)
+echo -e "${YELLOW}Setting up log rotation for MPD...${NC}"
+if [ -f "$REPO_DIR/config/logrotate-mpd.conf" ]; then
+    sudo cp "$REPO_DIR/config/logrotate-mpd.conf" /etc/logrotate.d/mpd
+    sudo chmod 644 /etc/logrotate.d/mpd
+    echo -e "${GREEN}✓ Log rotation configured (daily, keeps 7 days)${NC}"
+else
+    echo -e "${YELLOW}⚠ logrotate config not found, skipping log rotation setup${NC}"
+fi
+
 # Ensure ripped directory exists for CD ripping
 if [ ! -d "/media/music/ripped" ]; then
     echo -e "${YELLOW}Creating ripped directory for CD ripping...${NC}"
