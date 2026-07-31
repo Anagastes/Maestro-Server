@@ -96,11 +96,12 @@ def get_temp_dir_for_export(estimated_size_bytes: int):
     space_needed = estimated_size_bytes * 2.5
     
     # Try multiple temp locations in order of preference
+    # NOTE: Prioritize main filesystem paths over /tmp (which is tmpfs with quota limits)
     temp_locations = [
-        tempfile.gettempdir(),           # Usually /tmp
-        '/var/tmp',                       # Alternative temp
-        os.path.expanduser('~/.cache/maestro/temp'),  # User cache
+        os.path.expanduser('~/.cache/maestro/temp'),  # User cache (preferred - main filesystem)
         os.path.expanduser('~/maestro_temp'),          # Home directory
+        '/var/tmp',                       # Alternative temp on main filesystem
+        tempfile.gettempdir(),           # Usually /tmp (last - tmpfs with quota)
     ]
     
     best_location = None
@@ -458,8 +459,9 @@ def export_queue(
                     zipf.write(file_path, arcname, compress_type=zipfile.ZIP_DEFLATED)
                     files_added += 1
                     
-                    # Update progress every 10 files
-                    if files_added % 10 == 0:
+                    # Update progress more frequently for better feedback
+                    if files_added % 5 == 0 or files_added == total_files:
+                        _export_state['progress'] = int((files_added / total_files) * 100) if total_files > 0 else 0
                         _export_state['status'] = f'Compressing to ZIP... {files_added}/{total_files} files'
                         if callback:
                             callback(_export_state)
