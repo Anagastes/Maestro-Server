@@ -55,16 +55,16 @@ After=network.target
 
 [Service]
 User=Your-Root-User
-# Experiment with the commented versions for audio quality.
-ExecStart=/usr/bin/mpv --no-video --audio-device=alsa/hw:1,0 http://Your-MPD-address:8000
-#ExecStart=/usr/bin/mpv --no-video --no-audio-display --audio-device=alsa/hw:1,0 --demuxer-max-bytes=1MiB --demuxer-readahead-sec=5 http://Your-MPD-address:8000
-#ExecStart=/usr/bin/mpv --no-video --audio-device=alsa/hw:1,0 http://Your-MPD-address:8000
-
+ExecStart=/usr/bin/mpv --no-video --audio-device=alsa/hw:1,0 --network-timeout=60 --demuxer-max-bytes=128M http://Your-MPD-address:8000
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+**Key Flags Explained:**
+- `--network-timeout=60`: Waits up to 60 seconds for network responses; prevents immediate dropout on brief network hiccups
+- `--demuxer-max-bytes=128M`: Maintains a 128MB buffer to handle stream discontinuities and underruns gracefully
 
 ## Installation Steps
 
@@ -91,4 +91,37 @@ sudo systemctl status maestro-mpv-client.service
 - Replace `Your-MPD-address` with the IP address or hostname of your MPD server
 - Adjust `audio-device=alsa/hw:1,0` to match your DAC's ALSA device
 - The default port for MPD HTTP streaming is 8000
-- Experiment with the commented ExecStart lines for different audio quality/buffering options
+
+## Troubleshooting
+
+### Audio Device Underruns
+
+**Symptom:** Logs show repeated `Audio device underrun detected` or `Device underrun detected` messages; audio stuttering or glitching.
+
+**Cause:** The ALSA audio buffer is emptying faster than `mpv` can feed it, usually due to insufficient buffering or network delays.
+
+**Solution:** The flags in the recommended `ExecStart` line (`--network-timeout=60 --demuxer-max-bytes=128M`) handle this. If underruns persist:
+- Check your network connection stability
+- Verify the ALSA device is correctly configured: `aplay -l`
+- Try increasing the demuxer buffer: `--demuxer-max-bytes=256M`
+
+### Stream Drops or Premature Termination
+
+**Symptom:** `systemctl status` shows the service crashed, or logs show `Stream ends prematurely`.
+
+**Cause:** The HTTP stream connection dropped due to network hiccups, timeout, or server reset.
+
+**Solution:** The `--network-timeout=60` and `--demuxer-max-bytes=128M` flags provide resilience. Ensure:
+- `Restart=always` is set in the service file (auto-recovery on crashes)
+- Your network is stable
+- The MPD server's HTTP stream is configured correctly (see "Enable HTTP Streaming on Maestro Server" section above)
+
+### Monitor Service Status
+
+Check the live journal to diagnose ongoing issues:
+
+```bash
+sudo journalctl -u maestro-mpv-client.service -f
+```
+
+This shows real-time logs as the service runs, helping you spot network, audio device, or stream issues.
