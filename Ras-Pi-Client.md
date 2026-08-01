@@ -1,7 +1,7 @@
 # Raspberry Pi MPV Client for Multi-Room Playback
 
 I use the following simple client for multi-room playback.  
-I use a bare Raspberry Pi running Raspbian with a nice USB DAC attached and configured.
+I use a bare Raspberry Pi running Raspbian with a nice USB DAC attached and configured. I'm pretty certain you could do this with any version raspberry pi. I'm currently on a version 3 but it should be fine with a V2 or even a zero.  as long as it can run MPV.
 
 ## Setup Instructions
 
