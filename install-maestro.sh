@@ -658,19 +658,19 @@ $USER ALL=(ALL) NOPASSWD: /usr/bin/dpkg --configure -a
 # MPD Database Backup/Restore commands
 $USER ALL=(ALL) NOPASSWD: /usr/bin/cp /var/lib/mpd/database /var/lib/mpd/database.backup.*
 $USER ALL=(ALL) NOPASSWD: /usr/bin/cp /var/lib/mpd/database.backup.* /var/lib/mpd/database
-$USER ALL=(ALL) NOPASSWD: /usr/bin/find /var/lib/mpd/ -name database.backup.* -type f
-$USER ALL=(ALL) NOPASSWD: /usr/bin/du -h /var/lib/mpd/database*
-$USER ALL=(ALL) NOPASSWD: /usr/bin/stat -c %y /var/lib/mpd/database*
-$USER ALL=(ALL) NOPASSWD: /usr/bin/test -f /var/lib/mpd/database*
+$USER ALL=(ALL) NOPASSWD: /usr/bin/find /var/lib/mpd/ -type f
+$USER ALL=(ALL) NOPASSWD: /usr/bin/du -h /var/lib/mpd/
+$USER ALL=(ALL) NOPASSWD: /usr/bin/stat -c %y /var/lib/mpd/database
+$USER ALL=(ALL) NOPASSWD: /usr/bin/test -f /var/lib/mpd/database
 # CD Ripping commands
 $USER ALL=(ALL) NOPASSWD: /usr/bin/cdparanoia
 $USER ALL=(ALL) NOPASSWD: /usr/bin/cd-discid
 $USER ALL=(ALL) NOPASSWD: /usr/bin/abcde
 $USER ALL=(ALL) NOPASSWD: /usr/bin/eject
 # File management commands for imported music
-$USER ALL=(ALL) NOPASSWD: /usr/bin/mv /media/music/*
-$USER ALL=(ALL) NOPASSWD: /usr/bin/rm /media/music/*
-$USER ALL=(ALL) NOPASSWD: /usr/bin/rm -rf /media/music/*
+$USER ALL=(ALL) NOPASSWD: /usr/bin/mv /media/music/
+$USER ALL=(ALL) NOPASSWD: /usr/bin/rm /media/music/
+$USER ALL=(ALL) NOPASSWD: /usr/bin/rm -rf /media/music/
 EOF
     
     sudo chmod 440 "$SUDOERS_FILE"
