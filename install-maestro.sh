@@ -656,8 +656,7 @@ $USER ALL=(ALL) NOPASSWD: /usr/bin/journalctl
 $USER ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/mpd.conf
 $USER ALL=(ALL) NOPASSWD: /usr/bin/dpkg --configure -a
 # MPD Database Backup/Restore commands
-$USER ALL=(ALL) NOPASSWD: /usr/bin/cp /var/lib/mpd/database /var/lib/mpd/database.backup.*
-$USER ALL=(ALL) NOPASSWD: /usr/bin/cp /var/lib/mpd/database.backup.* /var/lib/mpd/database
+$USER ALL=(ALL) NOPASSWD: /usr/bin/cp /var/lib/mpd/*
 $USER ALL=(ALL) NOPASSWD: /usr/bin/find /var/lib/mpd/ -type f
 $USER ALL=(ALL) NOPASSWD: /usr/bin/du -h /var/lib/mpd/
 $USER ALL=(ALL) NOPASSWD: /usr/bin/stat -c %y /var/lib/mpd/database
