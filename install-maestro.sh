@@ -311,11 +311,12 @@ configure_mpd() {
     
     # Create CD ripping output directory
     if [ "$MUSIC_DIR" == "/media/music" ]; then
-        sudo mkdir -p "$USER_MUSIC_DIR/ripped"
-        sudo chown -R mpd:audio "$USER_MUSIC_DIR/ripped"
+        sudo mkdir -p "$USER_MUSIC_DIR/ripped" 2>/dev/null || true
+        # Try to set permissions, but don't fail if it's a read-only mount
+        sudo chown -R mpd:audio "$USER_MUSIC_DIR/ripped" 2>/dev/null || echo -e "${YELLOW}⚠️  Note: Could not set permissions on $USER_MUSIC_DIR/ripped (may be read-only mount)${NC}"
         echo -e "${GREEN}✓ Created CD ripping directory: $USER_MUSIC_DIR/ripped${NC}"
     else
-        sudo mkdir -p "$MUSIC_DIR/ripped"
+        sudo mkdir -p "$MUSIC_DIR/ripped" 2>/dev/null || true
         echo -e "${GREEN}✓ Created CD ripping directory: $MUSIC_DIR/ripped${NC}"
     fi
     
@@ -727,10 +728,11 @@ allow_writeable_chroot=YES
 use_localtime=YES
 EOF
     
-    # Ensure music directory exists and has proper permissions
-    sudo mkdir -p /media/music/ripped
-    sudo chown -R $USER:$USER /media/music
-    sudo chmod -R 755 /media/music
+    # Ensure ripped directory exists
+    # NOTE: Do NOT change ownership/permissions of /media/music
+    # MPD runs as 'mpd' user and has read access
+    # Changing permissions will fail on read-only network mounts
+    sudo mkdir -p /media/music/ripped 2>/dev/null || true
     
     # Grant MPD user access to music library
     echo -e "${YELLOW}Configuring MPD library access...${NC}"
