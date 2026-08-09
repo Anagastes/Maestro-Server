@@ -1,10 +1,15 @@
-Maestro MPD Server v4.0.4
-Release Date: July 31 2026
-Version: 4.0.4
+Maestro MPD Server v4.0.5
+Release Date: August 9 2026
+Version: 4.0.5
 
-🎵 EXPORT & DISK SPACE STABILITY 🎵
+🎵 AUDIO DEVICE CONFIGURATION IMPROVEMENTS 🎵
 
-Latest Features (July 31, 2026 - v4.0.4):
+Latest Features (August 9, 2026 - v4.0.5):
+✅ FIX: Audio device changes now automatically restart MPD (no manual restart needed)
+✅ IMPROVED: Better MPD restart error handling in admin panel
+✅ IMPROVED: Users see confirmation when MPD restarts successfully
+
+Previous Features (July 31, 2026 - v4.0.4):
 ✅ FIX: Export temp directory now prioritizes main filesystem (avoids tmpfs quota limits)
 ✅ FIX: Automatic log rotation prevents 126GB+ MPD log buildup
 ✅ NEW: Logrotate configuration deploys automatically on install & update
