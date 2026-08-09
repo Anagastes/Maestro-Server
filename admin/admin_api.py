@@ -1248,7 +1248,7 @@ def api_get_audio_config():
 
 @app.route('/api/audio/config', methods=['POST'])
 def api_save_audio_config():
-    """Save audio configuration and update MPD config"""
+    """Save audio configuration and update MPD config, then restart MPD"""
     try:
         config = request.json
         
@@ -1305,12 +1305,36 @@ def api_save_audio_config():
         except Exception as e:
             print(f"Error updating MPD config: {e}")
         
+        # Automatically restart MPD to apply audio configuration changes
+        mpd_restart_success = False
+        mpd_restart_message = ""
+        try:
+            import subprocess
+            import time
+            result = subprocess.run(['sudo', 'systemctl', 'restart', 'mpd.service'], 
+                                  check=True, capture_output=True, text=True, timeout=10)
+            mpd_restart_success = True
+            mpd_restart_message = "Audio configuration saved and MPD restarted successfully."
+            print("MPD service restarted successfully after audio config change.")
+            # Wait a moment for MPD to fully restart
+            time.sleep(2)
+        except subprocess.TimeoutExpired:
+            mpd_restart_message = "Audio configuration saved but MPD restart timed out."
+            print("Error: MPD restart timed out")
+        except subprocess.CalledProcessError as e:
+            mpd_restart_message = f"Audio configuration saved but MPD restart failed: {e.stderr.strip() if e.stderr else 'Unknown error'}"
+            print(f"Error restarting MPD: {mpd_restart_message}")
+        except Exception as e:
+            mpd_restart_message = f"Audio configuration saved but MPD restart error: {str(e)}"
+            print(f"General error restarting MPD: {mpd_restart_message}")
+        
         return jsonify({
             'status': 'success',
-            'message': 'Audio configuration saved. Restart MPD to apply changes.',
+            'message': mpd_restart_message,
             'saved_config': config,
             'config_file': str(AUDIO_CONFIG),
-            'mpd_updated': mpd_updated
+            'mpd_updated': mpd_updated,
+            'mpd_restarted': mpd_restart_success
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
