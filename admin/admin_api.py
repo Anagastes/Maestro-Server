@@ -5,7 +5,7 @@ System administration interface for MPD server configuration
 Runs on port 5004, separate from main web UI (port 5003)
 """
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session
 from flask_socketio import SocketIO
 import subprocess
 import psutil
@@ -13,6 +13,8 @@ import socket
 import os
 import json
 import threading
+import secrets
+import time
 from pathlib import Path
 
 # Import library_maintenance - handles both git repo and deployed locations
@@ -50,6 +52,10 @@ except ImportError:
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'maestro-admin-secret-key-change-in-production'
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Delete confirmation token management (for 2-step delete operations)
+delete_confirmation_tokens = {}  # Format: {token: {'path': path, 'timestamp': time, 'user_ip': ip}}
+DELETE_TOKEN_TIMEOUT = 300  # 5 minutes
 
 # Configuration file paths
 CONFIG_DIR = Path.home() / '.config' / 'maestro'
@@ -2591,9 +2597,9 @@ def play_file():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/files/delete', methods=['POST'])
-def delete_file():
-    """Delete file or directory"""
+@app.route('/api/files/delete-confirm', methods=['POST'])
+def delete_confirm():
+    """Request delete confirmation - returns a token valid for 5 minutes"""
     try:
         data = request.json
         path = data.get('path')
@@ -2603,13 +2609,85 @@ def delete_file():
         if not any(path.startswith(allowed) for allowed in allowed_paths):
             return jsonify({'success': False, 'error': 'Access denied'}), 403
         
+        # Security: Prevent deletion of root music directories
+        if path in allowed_paths:
+            return jsonify({'success': False, 'error': 'Cannot delete root music directories. Only files and subdirectories can be deleted.'}), 403
+        
+        # Validate that the path exists
+        if not os.path.exists(path):
+            return jsonify({'success': False, 'error': 'Path does not exist'}), 404
+        
+        # Generate a unique token for this delete operation
+        token = secrets.token_urlsafe(32)
+        user_ip = request.remote_addr
+        
+        delete_confirmation_tokens[token] = {
+            'path': path,
+            'timestamp': time.time(),
+            'user_ip': user_ip
+        }
+        
+        # Determine file type for user feedback
+        file_type = 'directory' if os.path.isdir(path) else 'file'
+        file_name = os.path.basename(path)
+        
+        return jsonify({
+            'success': True,
+            'token': token,
+            'path': path,
+            'file_type': file_type,
+            'file_name': file_name,
+            'message': f'Confirmation required to delete this {file_type}: {file_name}'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/files/delete', methods=['POST'])
+def delete_file():
+    """Delete file or directory - requires valid confirmation token from /api/files/delete-confirm"""
+    try:
+        data = request.json
+        token = data.get('token')
+        path = data.get('path')
+        
+        # Verify token exists and is valid
+        if token not in delete_confirmation_tokens:
+            return jsonify({'success': False, 'error': 'Invalid or expired confirmation token. Request a new confirmation.'}), 401
+        
+        token_data = delete_confirmation_tokens[token]
+        
+        # Security: Check token hasn't expired (5 minutes)
+        if time.time() - token_data['timestamp'] > DELETE_TOKEN_TIMEOUT:
+            del delete_confirmation_tokens[token]
+            return jsonify({'success': False, 'error': 'Confirmation token expired. Request a new confirmation.'}), 401
+        
+        # Security: Verify the path matches what was confirmed
+        if path != token_data['path']:
+            return jsonify({'success': False, 'error': 'Path does not match confirmation request'}), 403
+        
+        # Security: Re-check that path is still valid (not a root directory)
+        allowed_paths = ['/var/lib/mpd/music', '/mnt/music', '/media/music']
+        if not any(path.startswith(allowed) for allowed in allowed_paths) or path in allowed_paths:
+            return jsonify({'success': False, 'error': 'Access denied'}), 403
+        
+        # Security: Verify path still exists
+        if not os.path.exists(path):
+            del delete_confirmation_tokens[token]
+            return jsonify({'success': False, 'error': 'Path no longer exists'}), 404
+        
+        # Consume the token (one-time use)
+        del delete_confirmation_tokens[token]
+        
+        # Execute the delete
         if os.path.isdir(path):
             result = run_command(['rm', '-rf', path], require_sudo=True)
         else:
             result = run_command(['rm', '-f', path], require_sudo=True)
         
         if result['success']:
-            return jsonify({'success': True, 'message': 'Deleted successfully'})
+            file_name = os.path.basename(path)
+            print(f"[Security] User {token_data['user_ip']} deleted: {path}")
+            return jsonify({'success': True, 'message': f'Successfully deleted: {file_name}'})
         else:
             return jsonify({'success': False, 'error': result.get('error', 'Delete failed')}), 500
     except Exception as e:
@@ -2940,6 +3018,29 @@ def restore_mounts_on_startup():
         import traceback
         traceback.print_exc()
 
+def cleanup_expired_tokens():
+    """Periodically clean up expired delete confirmation tokens"""
+    while True:
+        try:
+            current_time = time.time()
+            expired_tokens = []
+            
+            for token, data in delete_confirmation_tokens.items():
+                if current_time - data['timestamp'] > DELETE_TOKEN_TIMEOUT:
+                    expired_tokens.append(token)
+            
+            for token in expired_tokens:
+                del delete_confirmation_tokens[token]
+            
+            if expired_tokens:
+                print(f"[Cleanup] Removed {len(expired_tokens)} expired delete confirmation token(s)")
+            
+            # Sleep for 1 minute before checking again
+            time.sleep(60)
+        except Exception as e:
+            print(f"[ERROR] Token cleanup failed: {e}")
+            time.sleep(60)
+
 # ============================================================================
 # API ENDPOINTS - LMS (LOGITECH MEDIA SERVER)
 # ============================================================================
@@ -3239,5 +3340,10 @@ if __name__ == '__main__':
     print("\n[STARTUP] Checking for configured mounts...")
     restore_mounts_on_startup()
     print()
+    
+    # Start background token cleanup thread
+    cleanup_thread = threading.Thread(target=cleanup_expired_tokens, daemon=True)
+    cleanup_thread.start()
+    print("[STARTUP] Delete confirmation token cleanup thread started\n")
     
     socketio.run(app, host='0.0.0.0', port=5004, debug=False, allow_unsafe_werkzeug=True)
