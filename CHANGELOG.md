@@ -1,5 +1,79 @@
 # Maestro Server - Changelog
 
+## Version 4.0.6 - Security Hardening & Admin Panel (August 9, 2026)
+
+### 🔒 File Deletion Security Improvements
+- **Two-Step Deletion Confirmation**: Implemented server-side confirmation mechanism for destructive file operations
+  - Step 1: Frontend requests confirmation → Server generates time-limited token
+  - Step 2: User confirms deletion → Execute delete with valid token
+  - Tokens: 43-character cryptographically secure strings, 5-minute timeout
+  - Single-use tokens: Consumed after first deletion attempt (prevents replay attacks)
+- **Root Directory Protection**: Prevents accidental deletion of music library root directories
+  - Protected paths: `/media/music`, `/mnt/music`, `/var/lib/mpd/music`
+  - Only files and subdirectories can be deleted (not the root directory itself)
+  - Validation occurs at both token request and execution stages (defense in depth)
+- **Automatic Token Cleanup**: Background thread removes expired tokens every 60 seconds
+- **Operation Logging**: All deletion operations logged with user IP address for audit trail
+
+### 🛠️ Sudoers Configuration Fixes
+- **Resolved Wildcard Validation Errors**: Fixed invalid sudoers patterns that caused installation warnings
+  - **Problem**: Patterns like `/usr/bin/rm /media/music/*` not allowed by sudo (no shell expansion in sudoers)
+  - **Solution**: Simplified to `/usr/bin/rm` with Python-level path validation
+  - **Result**: Installation proceeds without sudoers validation errors
+- **Updated Files**:
+  - `install-maestro.sh` - Fresh installation now deploys corrected sudoers rules
+  - `update-maestro.sh` - Existing installations can update to corrected rules
+  - `/etc/sudoers.d/maestro` - System deployment
+
+### 💻 Frontend Updates
+- **Enhanced File Browser Delete UX**: Three-step confirmation process
+  1. Initial browser confirmation dialog
+  2. Server generates token with file details
+  3. Final confirmation dialog showing full path before execution
+- **Clear Error Messaging**: Specific error messages for security violations
+  - "Cannot delete root music directories. Only files and subdirectories can be deleted."
+  - "Invalid or expired confirmation token. Request a new confirmation."
+
+### 📄 Files Modified
+- `admin/admin_api.py` - Added `/api/files/delete-confirm` endpoint, updated `/api/files/delete` with token validation
+- `admin/templates/file_browser.html` - Updated delete flow for two-step confirmation
+- `install-maestro.sh` - Fixed sudoers command patterns
+- `update-maestro.sh` - Fixed sudoers command patterns
+- `VERSION` - Updated to 4.0.6
+- `CHANGELOG.md` - This entry
+
+### 🎯 Testing & Validation
+- ✅ Token generation and validation working correctly
+- ✅ Single-use token enforcement preventing replay attacks
+- ✅ Root directory protection blocking attempted deletions
+- ✅ File and subdirectory deletion succeeds with valid token
+- ✅ Token expiration and cleanup functioning properly
+- ✅ Admin panel service running with no errors
+
+---
+
+## Version 4.0.5 - Audio Device Auto-Restart (August 9, 2026)
+
+### 🎵 Audio Configuration Improvements
+- **Automatic MPD Restart on Audio Configuration**: Audio changes now take effect immediately
+  - When audio device or format settings saved: MPD automatically restarts
+  - 2-second delay before restart to ensure config file written
+  - User feedback: "✅ MPD restarted automatically" or "⚠️ MPD restart failed - please restart manually"
+- **Enhanced Audio Tweaks UI**: Updated success messages to show restart status
+
+### 📄 Files Modified
+- `admin/admin_api.py` - Updated `api_save_audio_config()` to call `systemctl restart mpd`
+- `admin/templates/audio_tweaks.html` - Enhanced success message display
+- `VERSION` - Updated to 4.0.5
+- `CHANGELOG.md` - This entry
+
+### 🎯 Testing & Validation
+- ✅ Audio config saved successfully
+- ✅ MPD service restarted automatically
+- ✅ New audio settings take effect immediately
+
+---
+
 ## Version 4.0.4 - Export Stability & Disk Space Management (July 31, 2026)
 
 ### 🔧 Export System Fixes

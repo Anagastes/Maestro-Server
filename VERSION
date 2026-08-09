@@ -1,8 +1,8 @@
-Maestro MPD Server v4.0.5
+Maestro MPD Server v4.0.6
 Release Date: August 9 2026
-Version: 4.0.5
+Version: 4.0.6
 
-🎵 AUDIO DEVICE CONFIGURATION IMPROVEMENTS 🎵
+🔒 SECURITY & FILE MANAGEMENT IMPROVEMENTS 🔒
 
 Latest Features (August 9, 2026 - v4.0.5):
 ✅ FIX: Audio device changes now automatically restart MPD (no manual restart needed)
