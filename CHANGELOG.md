@@ -1,5 +1,31 @@
 # Maestro Server - Changelog
 
+## Version 4.0.7 - Network Mount Diagnostics (August 10, 2026)
+
+### 🔧 Enhanced NFS/SMB Mount Management
+- **Improved Error Diagnostics**: Detailed logging for mount operations with specific failure reasons
+  - Network unreachability detection with helpful error messages
+  - Timeout handling (10-second limit) for slow/unresponsive servers
+  - Server status validation and share path verification feedback
+  - Mount attempt/execution/result logging with [MOUNT] prefix for easy debugging
+- **Better User Feedback**: Frontend receives descriptive error messages including:
+  - "mount.nfs: Network is unreachable" for invalid IPs/network issues
+  - Timeout errors with server connectivity suggestions
+  - Mount point creation failures with specific reasons
+- **Verbose Logging**: All mount operations logged to systemd journal for troubleshooting
+  - View with: `sudo journalctl -u maestro-admin.service -f`
+  - Includes server, share path, mount point, and result for each operation
+- **Files Modified**:
+  - `admin/admin_api.py` - Enhanced `/api/library/mounts/<id>/mount` endpoint
+
+### 🎯 Testing & Validation
+- ✅ Mount logging captures all operation details
+- ✅ Error messages provide actionable diagnostics
+- ✅ Timeout detection prevents hanging on unreachable servers
+- ✅ Admin panel displays meaningful feedback to users
+
+---
+
 ## Version 4.0.6 - Security Hardening & Admin Panel (August 9, 2026)
 
 ### 🔒 File Deletion Security Improvements
