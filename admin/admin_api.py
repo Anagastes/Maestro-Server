@@ -710,13 +710,46 @@ def api_mount_share(mount_id):
         else:
             return jsonify({'status': 'error', 'message': 'Unknown mount type'}), 400
         
-        # Execute mount
-        result = run_command(cmd, require_sudo=True)
+        # Log mount attempt
+        print(f"[MOUNT] Attempting to mount: {mount['name']}", flush=True)
+        print(f"[MOUNT] Server: {mount['server']}, Share: {mount['share_path']}", flush=True)
+        print(f"[MOUNT] Mount point: {mount_point}", flush=True)
         
-        if result['success']:
-            return jsonify({'status': 'success', 'message': f"Mounted {mount['name']} with optimized options"})
-        else:
-            return jsonify({'status': 'error', 'message': result.get('stderr', 'Mount failed')}), 500
+        # Build sudo command
+        mount_cmd = f'/usr/bin/sudo {cmd}'
+        print(f"[MOUNT] Executing: {mount_cmd}", flush=True)
+        
+        # Execute mount with timeout and better error handling
+        try:
+            result = subprocess.run(
+                mount_cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            print(f"[MOUNT] Return code: {result.returncode}", flush=True)
+            if result.stdout:
+                print(f"[MOUNT] STDOUT: {result.stdout}", flush=True)
+            if result.stderr:
+                print(f"[MOUNT] STDERR: {result.stderr}", flush=True)
+            
+            if result.returncode == 0:
+                print(f"[MOUNT] SUCCESS: {mount['name']} mounted at {mount_point}", flush=True)
+                return jsonify({'status': 'success', 'message': f"Mounted {mount['name']} with optimized options"})
+            else:
+                error_msg = result.stderr.strip() if result.stderr else f"Mount failed with exit code {result.returncode}"
+                print(f"[MOUNT] FAILED: {error_msg}", flush=True)
+                return jsonify({'status': 'error', 'message': error_msg}), 500
+        except subprocess.TimeoutExpired:
+            error_msg = f"Mount timeout (10s) - Server {mount['server']} unreachable or slow. Check: (1) Network connectivity, (2) NFS server status, (3) Share path exists"
+            print(f"[MOUNT] TIMEOUT: {error_msg}", flush=True)
+            return jsonify({'status': 'error', 'message': error_msg}), 500
+        except Exception as mount_error:
+            error_msg = f"Mount error: {str(mount_error)}"
+            print(f"[MOUNT] ERROR: {error_msg}", flush=True)
+            return jsonify({'status': 'error', 'message': error_msg}), 500
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
