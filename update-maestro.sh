@@ -242,13 +242,22 @@ else
     echo -e "${YELLOW}⚠ logrotate config not found, skipping log rotation setup${NC}"
 fi
 
-# Ensure ripped directory exists for CD ripping
-if [ ! -d "/media/music/ripped" ]; then
-    echo -e "${YELLOW}Creating ripped directory for CD ripping...${NC}"
-    sudo mkdir -p /media/music/ripped
-    sudo chown mpd:audio /media/music/ripped
-    echo -e "${GREEN}✓ Created /media/music/ripped${NC}"
-fi
+# Ensure music directory structure exists with correct permissions
+# IMPORTANT: Fix permissions for both parent and ripped directories
+# /media/music needs to be writable by install user for:
+# - CD ripper to create album folders
+# - Admin app to create network mount subdirectories
+# And readable by audio group for MPD access
+echo -e "${YELLOW}Setting up /media/music directory permissions...${NC}"
+sudo mkdir -p /media/music
+sudo chown $USER:audio /media/music
+sudo chmod 775 /media/music
+
+# Ensure ripped subdirectory exists with correct permissions for CD ripping
+sudo mkdir -p /media/music/ripped
+sudo chown -R $USER:audio /media/music/ripped
+sudo chmod -R 775 /media/music/ripped
+echo -e "${GREEN}✓ Music directory configured (owner: $USER:audio, mode: 775)${NC}"
 
 # Update CD auto-rip scripts and udev rule
 echo -e "${YELLOW}Updating CD auto-rip configuration...${NC}"

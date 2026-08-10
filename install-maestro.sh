@@ -312,12 +312,18 @@ configure_mpd() {
     # Create CD ripping output directory
     if [ "$MUSIC_DIR" == "/media/music" ]; then
         sudo mkdir -p "$USER_MUSIC_DIR/ripped" 2>/dev/null || true
-        # Try to set permissions, but don't fail if it's a read-only mount
-        sudo chown -R mpd:audio "$USER_MUSIC_DIR/ripped" 2>/dev/null || echo -e "${YELLOW}⚠️  Note: Could not set permissions on $USER_MUSIC_DIR/ripped (may be read-only mount)${NC}"
-        echo -e "${GREEN}✓ Created CD ripping directory: $USER_MUSIC_DIR/ripped${NC}"
+        # Set owner to install user, group to audio (for MPD access)
+        sudo chown -R $USER:audio "$USER_MUSIC_DIR/ripped" 2>/dev/null || echo -e "${YELLOW}⚠️  Note: Could not set permissions on $USER_MUSIC_DIR/ripped (may be read-only mount)${NC}"
+        # Set permissions to rwxrwxr-x (775) - owner and group can write, others can read+execute
+        sudo chmod -R 775 "$USER_MUSIC_DIR/ripped" 2>/dev/null || echo -e "${YELLOW}⚠️  Note: Could not set permissions on $USER_MUSIC_DIR/ripped (may be read-only mount)${NC}"
+        echo -e "${GREEN}✓ Created CD ripping directory: $USER_MUSIC_DIR/ripped (owner: $USER:audio, mode: 775)${NC}"
     else
         sudo mkdir -p "$MUSIC_DIR/ripped" 2>/dev/null || true
-        echo -e "${GREEN}✓ Created CD ripping directory: $MUSIC_DIR/ripped${NC}"
+        # Set owner to install user, group to audio (for MPD access)
+        sudo chown -R $USER:audio "$MUSIC_DIR/ripped" 2>/dev/null || true
+        # Set permissions to rwxrwxr-x (775)
+        sudo chmod -R 775 "$MUSIC_DIR/ripped" 2>/dev/null || true
+        echo -e "${GREEN}✓ Created CD ripping directory: $MUSIC_DIR/ripped (owner: $USER:audio, mode: 775)${NC}"
     fi
     
     # CRITICAL: Backup MPD database BEFORE any changes
@@ -727,11 +733,21 @@ allow_writeable_chroot=YES
 use_localtime=YES
 EOF
     
-    # Ensure ripped directory exists
-    # NOTE: Do NOT change ownership/permissions of /media/music
-    # MPD runs as 'mpd' user and has read access
-    # Changing permissions will fail on read-only network mounts
+    # Ensure music directory structure exists with correct permissions
+    # /media/music needs to be writable by install user for:
+    # - CD ripper to create album folders
+    # - Admin app to create network mount subdirectories
+    # And readable by audio group for MPD access
+    echo -e "${YELLOW}Setting up /media/music directory permissions...${NC}"
+    sudo mkdir -p /media/music 2>/dev/null || true
+    sudo chown $USER:audio /media/music 2>/dev/null || true
+    sudo chmod 775 /media/music 2>/dev/null || true
+    
+    # Ensure ripped subdirectory exists with correct permissions
     sudo mkdir -p /media/music/ripped 2>/dev/null || true
+    sudo chown -R $USER:audio /media/music/ripped 2>/dev/null || true
+    sudo chmod -R 775 /media/music/ripped 2>/dev/null || true
+    echo -e "  ${GREEN}✓ Music directory configured with proper permissions${NC}"
     
     # Grant MPD user access to music library
     echo -e "${YELLOW}Configuring MPD library access...${NC}"
