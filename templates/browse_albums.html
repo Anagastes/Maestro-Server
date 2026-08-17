@@ -1825,16 +1825,16 @@
     <script src="/static/browse_albums.js"></script>
     <!-- Update Page Heading with Artist Name -->
     <script>
-        // Get artist from URL parameters and update heading
-        const urlParams = new URLSearchParams(window.location.search);
-        const artistName = urlParams.get('artist');
-
-        if (artistName) {
-            const headingEl = document.getElementById('page-heading');
-            if (headingEl) {
-                headingEl.textContent = `🎵 ${decodeURIComponent(artistName)} » Albums`;
+        // NOTE: urlParams and artistName are already declared in browse_albums.js (top-level)
+        // Update page heading with artist name from external script variables
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof artistName !== 'undefined' && artistName) {
+                const headingEl = document.getElementById('page-heading');
+                if (headingEl) {
+                        headingEl.textContent = `🎵 ${decodeURIComponent(artistName)} » Albums`;
+                }
             }
-        }
+        });
     </script>
     <!-- Header Search Functionality with Autocomplete -->
     <script>

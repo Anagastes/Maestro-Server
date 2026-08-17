@@ -1,8 +1,8 @@
 print("[DEBUG] app.py loaded and running", flush=True)
 
 # Application version information
-APP_VERSION = "4.0.7"
-APP_BUILD_DATE = "2026-08-10" 
+APP_VERSION = "4.0.8"
+APP_BUILD_DATE = "2026-08-17" 
 APP_NAME = "Maestro MPD Server"
 
 # Simple threading mode to avoid eventlet issues
@@ -6175,6 +6175,13 @@ def api_browse_albums():
 @app.route('/api/album_tracks', methods=['GET'])
 def api_album_tracks():
     """Return all tracks for a given album and artist as JSON."""
+    import re
+    
+    def _norm(s: str) -> str:
+        """Normalize strings for fuzzy comparison: lowercase and strip non-alnum."""
+        if not s:
+            return ''
+        return re.sub(r"[^a-z0-9]+", "", s.lower())
 
     album = request.args.get('album', '')  # Don't strip - preserve trailing spaces
     artist = request.args.get('artist', '').strip()
@@ -6190,24 +6197,66 @@ def api_album_tracks():
         return jsonify({'status': 'error', 'message': 'Could not connect to MPD'}), 500
 
     try:
-        # If artist specified, search by both artist and album for exact match
+        tracks = []
+        
+        # If artist specified, use multi-strategy fallback (like Add Album does)
         if artist:
-            tracks = client.find('album', album, 'artist', artist)
-            print(f"[DEBUG] Album+Artist exact search returned {len(tracks) if tracks else 0} tracks")
+            # Strategy 1: Try albumartist first (catches VA albums!)
+            try:
+                tracks = client.find('albumartist', artist, 'album', album)
+                if tracks:
+                    print(f"[DEBUG] Found {len(tracks)} tracks using AlbumArtist+Album", flush=True)
+            except Exception as e:
+                print(f"[DEBUG] AlbumArtist search failed: {e}", flush=True)
             
-            # If no exact match, try with trailing space
+            # Strategy 2: Try artist field
             if not tracks:
-                tracks = client.find('album', album + ' ', 'artist', artist)
-                print(f"[DEBUG] Album+Artist search with trailing space returned {len(tracks) if tracks else 0} tracks")
+                try:
+                    tracks = client.find('artist', artist, 'album', album)
+                    if tracks:
+                        print(f"[DEBUG] Found {len(tracks)} tracks using Artist+Album", flush=True)
+                except Exception as e:
+                    print(f"[DEBUG] Artist search failed: {e}", flush=True)
+            
+            # Strategy 3: Fuzzy search fallback
+            if not tracks:
+                try:
+                    candidates = client.search('album', album) or []
+                    print(f"[DEBUG] Fallback search('album', '{album}') returned {len(candidates)} candidates", flush=True)
+                    if candidates and artist:
+                        na = _norm(artist)
+                        # Try exact match first
+                        filtered = [t for t in candidates
+                                    if (_norm(t.get('artist', '')) == na or _norm(t.get('albumartist', '')) == na)
+                                    and _norm(t.get('album', '')) == _norm(album)]
+                        if filtered:
+                            tracks = filtered
+                            print(f"[DEBUG] Fuzzy search matched {len(tracks)} tracks (exact)", flush=True)
+                        else:
+                            # Try partial match
+                            filtered = [t for t in candidates
+                                        if (_norm(t.get('artist', '')) == na or _norm(t.get('albumartist', '')) == na)
+                                        and (_norm(album) in _norm(t.get('album', '')) or _norm(t.get('album', '')) in _norm(album))]
+                            if filtered:
+                                tracks = filtered
+                                print(f"[DEBUG] Fuzzy search matched {len(tracks)} tracks (partial)", flush=True)
+                except Exception as e:
+                    print(f"[DEBUG] Fuzzy fallback error: {e}", flush=True)
         else:
             # No artist specified, search by album only
-            tracks = client.find('album', album)
-            print(f"[DEBUG] Album-only exact search returned {len(tracks) if tracks else 0} tracks")
+            try:
+                tracks = client.find('album', album)
+                print(f"[DEBUG] Album-only exact search returned {len(tracks) if tracks else 0} tracks")
+            except Exception as e:
+                print(f"[DEBUG] Album search failed: {e}", flush=True)
             
             # If no results, try with trailing space
             if not tracks:
-                tracks = client.find('album', album + ' ')
-                print(f"[DEBUG] Album-only search with trailing space returned {len(tracks) if tracks else 0} tracks")
+                try:
+                    tracks = client.find('album', album + ' ')
+                    print(f"[DEBUG] Album-only search with trailing space returned {len(tracks) if tracks else 0} tracks")
+                except Exception as e:
+                    print(f"[DEBUG] Album+space search failed: {e}", flush=True)
         
         print(f"[DEBUG] Final track count: {len(tracks) if tracks else 0}", flush=True)
         
