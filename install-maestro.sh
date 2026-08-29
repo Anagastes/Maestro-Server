@@ -786,11 +786,13 @@ configure_cd_autorip() {
     if [ -f "$REPO_DIR/udev/99-maestro-cd.rules" ]; then
         # Replace %u with actual username in udev rule
         sed "s/%u/$USER/g" "$REPO_DIR/udev/99-maestro-cd.rules" | sudo tee /etc/udev/rules.d/99-maestro-cd.rules > /dev/null
-        sudo udevadm control --reload-rules
-        sudo udevadm trigger
-        echo -e "  ${GREEN}✓ Installed udev rule for CD detection${NC}"
+        echo -e "${GREEN}Check if udev rights exist (prevent crash on lxc, docker etc.)...${NC}"
+        if sudo udevadm control --reload-rules && sudo udevadm trigger; then
+            echo -e "  ${GREEN}✓ Installed udev rule for CD detection${NC}"
+        else
+            echo -e "  ${GREEN}✓ Installed udev rule but not enabled (permission failed. lxc or docker?)${NC}"
+        fi
     fi
-    
     echo -e "${GREEN}✓ CD auto-rip configured (disabled by default, enable in CD Settings)${NC}"
 }
 
