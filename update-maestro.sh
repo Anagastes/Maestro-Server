@@ -5,7 +5,7 @@
 # Pulls latest changes from git and updates the installation
 #==============================================================================
 
-set -e  # Exit on error
+set -e # Exit on error
 
 # Colors for output
 RED='\033[0;31m'
@@ -59,7 +59,7 @@ if [ "$BEHIND" -gt 0 ]; then
         exit 1
     fi
     echo -e "${GREEN}✓ Successfully pulled $BEHIND new commits${NC}"
-    
+
     # Show what was updated
     echo ""
     echo -e "${YELLOW}Recent changes:${NC}"
@@ -158,11 +158,11 @@ fi
 
 # Check and install FFmpeg if missing (required for MP3 export)
 echo -e "${YELLOW}Checking for FFmpeg (required for MP3 export)...${NC}"
-if ! command -v ffmpeg &> /dev/null; then
+if ! command -v ffmpeg &>/dev/null; then
     echo -e "${YELLOW}FFmpeg not found, installing...${NC}"
     sudo apt update
     sudo apt install -y ffmpeg
-    if command -v ffmpeg &> /dev/null; then
+    if command -v ffmpeg &>/dev/null; then
         echo -e "${GREEN}✓ FFmpeg installed successfully${NC}"
     else
         echo -e "${YELLOW}⚠ Warning: FFmpeg installation failed (MP3 export will not work)${NC}"
@@ -174,7 +174,7 @@ fi
 # Update sudoers permissions (critical for backup/restore)
 echo -e "${YELLOW}Updating sudo permissions for admin functions...${NC}"
 SUDOERS_FILE="/etc/sudoers.d/maestro"
-sudo tee "$SUDOERS_FILE" > /dev/null <<EOF
+sudo tee "$SUDOERS_FILE" >/dev/null <<EOF
 # Maestro MPD Control - Sudo permissions
 # Allow user to run system management commands without password
 
@@ -218,7 +218,7 @@ echo -e "${GREEN}✓ Updated sudo permissions${NC}"
 # Configure MPD to wait for NFS mounts (fixes database loss issue)
 echo -e "${YELLOW}Configuring MPD to wait for NFS mounts...${NC}"
 sudo mkdir -p /etc/systemd/system/mpd.service.d
-sudo tee /etc/systemd/system/mpd.service.d/nfs-wait.conf > /dev/null <<'MPDEOF'
+sudo tee /etc/systemd/system/mpd.service.d/nfs-wait.conf >/dev/null <<'MPDEOF'
 [Unit]
 # Wait for NFS mounts before starting MPD
 After=network-online.target remote-fs.target
@@ -248,16 +248,21 @@ fi
 # - CD ripper to create album folders
 # - Admin app to create network mount subdirectories
 # And readable by audio group for MPD access
-echo -e "${YELLOW}Setting up /media/music directory permissions...${NC}"
-sudo mkdir -p /media/music
-sudo chown $USER:audio /media/music
-sudo chmod 775 /media/music
+MEDIA_DIR="/media/music"
+if [ -w "$MEDIA_DIR" ]; then
+    echo -e "${YELLOW}Setting up $MEDIA_DIR directory permissions...${NC}"
+    sudo mkdir -p "$MEDIA_DIR"
+    sudo chown $USER:audio "$MEDIA_DIR"
+    sudo chmod 775 "$MEDIA_DIR"
 
-# Ensure ripped subdirectory exists with correct permissions for CD ripping
-sudo mkdir -p /media/music/ripped
-sudo chown -R $USER:audio /media/music/ripped
-sudo chmod -R 775 /media/music/ripped
-echo -e "${GREEN}✓ Music directory configured (owner: $USER:audio, mode: 775)${NC}"
+    # Ensure ripped subdirectory exists with correct permissions for CD ripping
+    sudo mkdir -p "$MEDIA_DIR"/ripped
+    sudo chown -R $USER:audio "$MEDIA_DIR"/ripped
+    sudo chmod -R 775 "$MEDIA_DIR"/ripped
+    echo -e "${GREEN}✓ Music directory configured (owner: $USER:audio, mode: 775)${NC}"
+else
+    echo "Main dir $MEDIA_DIR is in RO-Mode (symlink, docker/lxc or bind mount?). Skipping."
+fi
 
 # Update CD auto-rip scripts and udev rule
 echo -e "${YELLOW}Updating CD auto-rip configuration...${NC}"
@@ -271,8 +276,12 @@ if [ -f "$REPO_DIR/scripts/cd-inserted.sh" ]; then
 fi
 
 if [ -f "$REPO_DIR/udev/99-maestro-cd.rules" ]; then
-    sed "s/%u/$USER/g" "$REPO_DIR/udev/99-maestro-cd.rules" | sudo tee /etc/udev/rules.d/99-maestro-cd.rules > /dev/null
-    sudo udevadm control --reload-rules
+    sed "s/%u/$USER/g" "$REPO_DIR/udev/99-maestro-cd.rules" | sudo tee /etc/udev/rules.d/99-maestro-cd.rules >/dev/null
+    if sudo udevadm control --reload-rules && sudo udevadm trigger; then
+        echo -e "  ${GREEN}✓ Installed udev rule for CD detection${NC}"
+    else
+        echo -e "  ${GREEN}✓ Installed udev rule but not enabled (permission failed. lxc or docker?)${NC}"
+    fi
     echo -e "${GREEN}✓ Updated udev rule for CD detection${NC}"
 fi
 
@@ -377,29 +386,29 @@ echo -e "${GREEN}[5/6] Updating Python dependencies...${NC}"
 check_venv_health() {
     local venv_path="$1"
     if [ ! -d "$venv_path" ]; then
-        return 1  # venv doesn't exist
+        return 1 # venv doesn't exist
     fi
-    
+
     # Check if pip is functional
     if ! "$venv_path/bin/pip" --version &>/dev/null; then
         echo -e "${YELLOW}⚠ Virtual environment is broken (likely due to Python update)${NC}"
         return 1
     fi
-    
+
     return 0
 }
 
 # Update main app dependencies (use virtual environment)
 if [ -d "$INSTALL_DIR/web/venv" ]; then
     cd "$INSTALL_DIR/web"
-    
+
     if ! check_venv_health "$INSTALL_DIR/web/venv"; then
         echo -e "${YELLOW}Recreating web virtual environment...${NC}"
         rm -rf venv
         python3 -m venv venv
         echo -e "${GREEN}✓ Recreated web virtual environment${NC}"
     fi
-    
+
     source venv/bin/activate
     pip install --upgrade pip --quiet
     pip install --upgrade -r "$INSTALL_DIR/requirements.txt" --quiet
@@ -420,14 +429,14 @@ fi
 # Update admin dependencies (use virtual environment)
 if [ -d "$INSTALL_DIR/admin/venv" ]; then
     cd "$INSTALL_DIR/admin"
-    
+
     if ! check_venv_health "$INSTALL_DIR/admin/venv"; then
         echo -e "${YELLOW}Recreating admin virtual environment...${NC}"
         rm -rf venv
         python3 -m venv venv
         echo -e "${GREEN}✓ Recreated admin virtual environment${NC}"
     fi
-    
+
     source venv/bin/activate
     pip install --upgrade pip --quiet
     pip install --upgrade -r requirements.txt --quiet
@@ -451,24 +460,24 @@ echo -e "${GREEN}[6/6] Updating services and configuration...${NC}"
 # Update NFS monitoring if scripts exist
 if [ -f "$REPO_DIR/scripts/nfs-health-check.sh" ]; then
     echo -e "${YELLOW}Updating NFS health monitoring...${NC}"
-    
+
     # Update scripts in install directory
     if [ -d "$INSTALL_DIR/scripts" ]; then
         cp "$REPO_DIR/scripts/nfs-health-check.sh" "$INSTALL_DIR/scripts/"
         cp "$REPO_DIR/scripts/nfs-health-report.sh" "$INSTALL_DIR/scripts/"
         chmod +x "$INSTALL_DIR/scripts/nfs-health-check.sh"
         chmod +x "$INSTALL_DIR/scripts/nfs-health-report.sh"
-        
+
         # Update service file with correct paths
-        sed "s|/home/fausto/Maestro-Server|$INSTALL_DIR|g" "$REPO_DIR/scripts/nfs-health-check.service" | \
-            sudo tee /etc/systemd/system/nfs-health-check.service > /dev/null
-        
+        sed "s|/home/fausto/Maestro-Server|$INSTALL_DIR|g" "$REPO_DIR/scripts/nfs-health-check.service" |
+            sudo tee /etc/systemd/system/nfs-health-check.service >/dev/null
+
         # Update timer
         sudo cp "$REPO_DIR/scripts/nfs-health-check.timer" /etc/systemd/system/
-        
+
         # Reload systemd to pick up new/updated service files
         sudo systemctl daemon-reload
-        
+
         # Enable if not already enabled
         if ! systemctl is-enabled --quiet nfs-health-check.timer 2>/dev/null; then
             sudo systemctl enable nfs-health-check.timer
